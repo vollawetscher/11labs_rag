@@ -191,25 +191,68 @@ app.post('/chat/completions', async (req, res) => {
 
     if (!slug) {
       console.log('  → Intent: unknown');
-      return res.json({
-        id: `chatcmpl-${Date.now()}`,
-        object: 'chat.completion',
-        created: Math.floor(Date.now() / 1000),
-        model: 'gpt-4o-mini',
-        choices: [{
-          index: 0,
-          message: {
-            role: 'assistant',
-            content: 'Entschuldigung, ich konnte Ihre Anfrage keinem bekannten Vorgang zuordnen. Könnten Sie bitte präzisieren, worum es geht?'
-          },
-          finish_reason: 'stop'
-        }],
-        usage: {
-          prompt_tokens: 0,
-          completion_tokens: 0,
-          total_tokens: 0
-        }
-      });
+      const unknownMessage = 'Entschuldigung, ich konnte Ihre Anfrage keinem bekannten Vorgang zuordnen. Könnten Sie bitte präzisieren, worum es geht?';
+
+      if (stream) {
+        // Streaming response for unknown intent
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        const id = `chatcmpl-${Date.now()}`;
+        const created = Math.floor(Date.now() / 1000);
+
+        // Send the message as a stream
+        const streamData = {
+          id,
+          object: 'chat.completion.chunk',
+          created,
+          model: 'gpt-4o-mini',
+          choices: [{
+            index: 0,
+            delta: { content: unknownMessage },
+            finish_reason: null
+          }]
+        };
+        res.write(`data: ${JSON.stringify(streamData)}\n\n`);
+
+        // Send final chunk
+        const finalData = {
+          id,
+          object: 'chat.completion.chunk',
+          created,
+          model: 'gpt-4o-mini',
+          choices: [{
+            index: 0,
+            delta: {},
+            finish_reason: 'stop'
+          }]
+        };
+        res.write(`data: ${JSON.stringify(finalData)}\n\n`);
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      } else {
+        // Non-streaming response
+        return res.json({
+          id: `chatcmpl-${Date.now()}`,
+          object: 'chat.completion',
+          created: Math.floor(Date.now() / 1000),
+          model: 'gpt-4o-mini',
+          choices: [{
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: unknownMessage
+            },
+            finish_reason: 'stop'
+          }],
+          usage: {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0
+          }
+        });
+      }
     }
 
     console.log(`  → Intent: ${slug}`);
@@ -219,25 +262,64 @@ app.post('/chat/completions', async (req, res) => {
 
     if (!vorgangData) {
       console.log('  → Kein Vorgang gefunden');
-      return res.json({
-        id: `chatcmpl-${Date.now()}`,
-        object: 'chat.completion',
-        created: Math.floor(Date.now() / 1000),
-        model: 'gpt-4o-mini',
-        choices: [{
-          index: 0,
-          message: {
-            role: 'assistant',
-            content: 'Entschuldigung, ich konnte keine Informationen zu diesem Vorgang finden.'
-          },
-          finish_reason: 'stop'
-        }],
-        usage: {
-          prompt_tokens: 0,
-          completion_tokens: 0,
-          total_tokens: 0
-        }
-      });
+      const noDataMessage = 'Entschuldigung, ich konnte keine Informationen zu diesem Vorgang finden.';
+
+      if (stream) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        const id = `chatcmpl-${Date.now()}`;
+        const created = Math.floor(Date.now() / 1000);
+
+        const streamData = {
+          id,
+          object: 'chat.completion.chunk',
+          created,
+          model: 'gpt-4o-mini',
+          choices: [{
+            index: 0,
+            delta: { content: noDataMessage },
+            finish_reason: null
+          }]
+        };
+        res.write(`data: ${JSON.stringify(streamData)}\n\n`);
+
+        const finalData = {
+          id,
+          object: 'chat.completion.chunk',
+          created,
+          model: 'gpt-4o-mini',
+          choices: [{
+            index: 0,
+            delta: {},
+            finish_reason: 'stop'
+          }]
+        };
+        res.write(`data: ${JSON.stringify(finalData)}\n\n`);
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      } else {
+        return res.json({
+          id: `chatcmpl-${Date.now()}`,
+          object: 'chat.completion',
+          created: Math.floor(Date.now() / 1000),
+          model: 'gpt-4o-mini',
+          choices: [{
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: noDataMessage
+            },
+            finish_reason: 'stop'
+          }],
+          usage: {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0
+          }
+        });
+      }
     }
 
     // 3. Response generieren (je nach Modus)
