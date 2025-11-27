@@ -159,7 +159,7 @@ Antworte natürlich und hilfreich. Fasse dich kurz, aber bleibe vollständig.`;
 
 app.post('/chat/completions', async (req, res) => {
   try {
-    const { messages, mode = 'answer' } = req.body;
+    const { messages, mode = 'answer', stream = false } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({
@@ -258,28 +258,76 @@ app.post('/chat/completions', async (req, res) => {
     }
 
     // 4. OpenAI-kompatible Response
-    const response = {
-      id: `chatcmpl-${Date.now()}`,
-      object: 'chat.completion',
-      created: Math.floor(Date.now() / 1000),
-      model: 'gpt-4o-mini',
-      choices: [{
-        index: 0,
-        message: {
-          role: 'assistant',
-          content: responseContent
-        },
-        finish_reason: 'stop'
-      }],
-      usage: {
-        prompt_tokens: 100, // Placeholder
-        completion_tokens: 50, // Placeholder
-        total_tokens: 150 // Placeholder
-      }
-    };
+    console.log(`  → Response generated (${responseContent.length} chars)`);
+    console.log(`  → Stream mode: ${stream}\n`);
 
-    console.log(`  → Response generated (${responseContent.length} chars)\n`);
-    res.json(response);
+    if (stream) {
+      // Streaming Response (SSE)
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      const id = `chatcmpl-${Date.now()}`;
+      const created = Math.floor(Date.now() / 1000);
+
+      // Split content into chunks for streaming
+      const chunkSize = 10;
+      const words = responseContent.split(' ');
+
+      for (let i = 0; i < words.length; i += chunkSize) {
+        const chunk = words.slice(i, i + chunkSize).join(' ') + ' ';
+        const streamData = {
+          id,
+          object: 'chat.completion.chunk',
+          created,
+          model: 'gpt-4o-mini',
+          choices: [{
+            index: 0,
+            delta: { content: chunk },
+            finish_reason: null
+          }]
+        };
+        res.write(`data: ${JSON.stringify(streamData)}\n\n`);
+      }
+
+      // Send final chunk
+      const finalData = {
+        id,
+        object: 'chat.completion.chunk',
+        created,
+        model: 'gpt-4o-mini',
+        choices: [{
+          index: 0,
+          delta: {},
+          finish_reason: 'stop'
+        }]
+      };
+      res.write(`data: ${JSON.stringify(finalData)}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+    } else {
+      // Non-streaming Response
+      const response = {
+        id: `chatcmpl-${Date.now()}`,
+        object: 'chat.completion',
+        created: Math.floor(Date.now() / 1000),
+        model: 'gpt-4o-mini',
+        choices: [{
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: responseContent
+          },
+          finish_reason: 'stop'
+        }],
+        usage: {
+          prompt_tokens: 100,
+          completion_tokens: 50,
+          total_tokens: 150
+        }
+      };
+      res.json(response);
+    }
 
   } catch (error) {
     console.error('Error:', error);
