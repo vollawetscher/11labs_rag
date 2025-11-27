@@ -1,0 +1,6 @@
+{
+  "messages": [
+    {"role": "user", "content": "Wie kann ich mein Auto abmelden?"}
+  ],
+  "mode": "answer"
+}

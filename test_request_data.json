@@ -1,0 +1,6 @@
+{
+  "messages": [
+    {"role": "user", "content": "Was kostet eine Fahrzeugschein-Änderung?"}
+  ],
+  "mode": "data"
+}
