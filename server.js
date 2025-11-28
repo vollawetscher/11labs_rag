@@ -103,7 +103,7 @@ async function callOpenAI(messages, temperature = 0.3) {
 // Intent Extraction
 // ============================================================================
 
-async function extractIntent(userMessage) {
+async function extractIntent(userMessage, conversationContext = []) {
   // Lade alle verfügbaren Intent-Slugs aus der Datenbank
   const intentIndex = await supabaseQuery('intent_index', {
     'select': 'slug,intent_group',
@@ -117,14 +117,24 @@ async function extractIntent(userMessage) {
 Verfügbare Intent-Slugs:
 - ${slugList}
 
-Aufgabe: Bestimme welcher Slug am besten zur Benutzer-Anfrage passt.
+Aufgabe: Bestimme welcher Slug am besten zur aktuellen Benutzer-Anfrage passt.
+Nutze den Conversation-Context, um unvollständige Fragen zu verstehen.
+
+Beispiel:
+User: "Wie kann ich mein Auto abmelden?"
+Assistant: "Sie brauchen..."
+User: "Und wie viel kostet das?" → Intent: abmeldung_ausserbetriebsetzung (aus Kontext!)
 
 Antworte NUR mit dem Slug (nichts anderes). Wenn keine Übereinstimmung gefunden wird, antworte mit "unknown".`;
 
-  const result = await callOpenAI([
+  // Nutze Conversation-Context für bessere Intent-Erkennung
+  const messages = [
     { role: 'system', content: systemPrompt },
+    ...conversationContext.slice(-6), // Letzte 6 Messages als Kontext
     { role: 'user', content: userMessage }
-  ], 0.1);
+  ];
+
+  const result = await callOpenAI(messages, 0.1);
 
   const extractedSlug = result.choices[0].message.content.trim();
 
@@ -186,6 +196,26 @@ app.post('/chat/completions', async (req, res) => {
       });
     }
 
+    // Session-ID aus traceparent extrahieren
+    const traceparent = req.headers.traceparent || '';
+    const sessionId = traceparent.split('-')[1] || 'unknown';
+
+    // Task Description filtern/kürzen
+    const filteredMessages = messages.map(m => {
+      if (m.role === 'system' && m.content?.length > 1000) {
+        return {
+          role: 'system',
+          content: 'Du bist ein KFZ-Zulassungsberater. Beantworte Fragen präzise basierend auf den Informationen aus der Datenbank.'
+        };
+      }
+      return m;
+    });
+
+    // Conversation-Kontext: Alle relevanten Messages (ohne zu großen System-Prompt)
+    const conversationContext = filteredMessages
+      .filter(m => m.role !== 'system' || m.content?.length < 1000)
+      .slice(-10); // Letzte 10 Messages für Kontext
+
     // Extrahiere die letzte User-Nachricht
     const userMessage = messages
       .filter(m => m.role === 'user')
@@ -200,10 +230,12 @@ app.post('/chat/completions', async (req, res) => {
       });
     }
 
-    console.log(`[${new Date().toISOString()}] User: "${userMessage}"`);
+    console.log(`[${new Date().toISOString()}] Session: ${sessionId.substring(0, 8)}...`);
+    console.log(`  Conversation length: ${conversationContext.length} messages`);
+    console.log(`  User: "${userMessage}"`);
 
-    // 1. Intent-Extraktion
-    const slug = await extractIntent(userMessage);
+    // 1. Intent-Extraktion mit Conversation-Context
+    const slug = await extractIntent(userMessage, conversationContext);
 
     if (!slug) {
       console.log('  → Intent: unknown');
