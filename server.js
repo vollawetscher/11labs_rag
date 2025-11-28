@@ -22,12 +22,28 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
+// Store last requests for debugging
+const lastRequests = [];
+const MAX_STORED_REQUESTS = 10;
+
 // Request Logger
 app.use((req, res, next) => {
   console.log(`\n[${new Date().toISOString()}] ${req.method} ${req.path}`);
   console.log('  Headers:', JSON.stringify(req.headers, null, 2));
   if (req.body && Object.keys(req.body).length > 0) {
     console.log('  Body:', JSON.stringify(req.body, null, 2).substring(0, 500));
+
+    // Store request for debugging
+    if (req.path === '/chat/completions') {
+      lastRequests.push({
+        timestamp: new Date().toISOString(),
+        headers: req.headers,
+        body: req.body
+      });
+      if (lastRequests.length > MAX_STORED_REQUESTS) {
+        lastRequests.shift();
+      }
+    }
   }
   next();
 });
@@ -432,6 +448,34 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     supabase: !!process.env.SUPABASE_URL,
     openai: !!process.env.OPENAI_API_KEY
+  });
+});
+
+// ============================================================================
+// Debug Endpoint
+// ============================================================================
+
+app.get('/debug/last-requests', (req, res) => {
+  res.json({
+    count: lastRequests.length,
+    requests: lastRequests.map(r => ({
+      timestamp: r.timestamp,
+      headers: {
+        'traceparent': r.headers.traceparent,
+        'x-request-id': r.headers['x-request-id'],
+        'user-agent': r.headers['user-agent']
+      },
+      body: {
+        messages_count: r.body.messages?.length,
+        messages: r.body.messages?.map(m => ({
+          role: m.role,
+          content_length: m.content?.length,
+          content_preview: m.content?.substring(0, 200)
+        })),
+        stream: r.body.stream,
+        mode: r.body.mode
+      }
+    }))
   });
 });
 
